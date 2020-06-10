@@ -5,21 +5,21 @@
         "epochs": 100000,
         "learning_rate": 1e-4,
         "sigma": 1.0,
-        "iters_per_checkpoint": 2000,
-        "batch_size": 12,
+        "iters_per_checkpoint": 100,
+        "batch_size": 18,
         "seed": 1234,
-        "checkpoint_path": "",
-        "with_tensorboard": false
+        "checkpoint_path": "/home/sean/src/waveglow/checkpoints/waveglow_100",
+        "with_tensorboard": true
     },
     "data_config": {
         "training_files": "train_files.txt",
-        "segment_length": 16000,
+        "segment_length": 8000,
         "sampling_rate": 22050,
         "filter_length": 1024,
         "hop_length": 256,
         "win_length": 1024,
         "mel_fmin": 0.0,
-        "mel_fmax": 8000.0
+        "mel_fmax": 7000.0
     },
     "dist_config": {
         "dist_backend": "nccl",
