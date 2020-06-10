@@ -6,7 +6,7 @@
         "learning_rate": 1e-4,
         "sigma": 1.0,
         "iters_per_checkpoint": 100,
-        "batch_size": 18,
+        "batch_size": 60,
         "seed": 1234,
         "checkpoint_path": "checkpoint_latest",
         "with_tensorboard": true

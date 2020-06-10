@@ -109,7 +109,7 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
 
     if with_tensorboard and rank == 0:
         from tensorboardX import SummaryWriter
-        logger = SummaryWriter(os.path.join(output_directory, 'logs'))
+        logger = SummaryWriter('logs')
 
     model.train()
     epoch_offset = max(0, int(iteration / len(train_loader)))
