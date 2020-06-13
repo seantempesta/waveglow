@@ -3,7 +3,7 @@
         "fp16_run": true,
         "output_directory": "/content/drive/My Drive/ml/clem/waveglow_checkpoints",
         "epochs": 100000,
-        "learning_rate": 1e-4,
+        "learning_rate": 1e-5,
         "sigma": 1.0,
         "iters_per_checkpoint": 200,
         "batch_size": 40,
