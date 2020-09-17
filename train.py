@@ -139,7 +139,8 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
 
     if with_tensorboard and rank == 0:
         from tensorboardX import SummaryWriter
-        logger = SummaryWriter(os.path.join(output_directory, 'logs'))
+        logger_train = SummaryWriter(os.path.join(output_directory, 'logs', 'train'))
+        logger_eval = SummaryWriter(os.path.join(output_directory, 'logs', 'eval'))
 
     epoch_offset = max(0, int(iteration / len(train_loader)))
     # ================ MAIN TRAINNIG LOOP! ===================
@@ -171,12 +172,12 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
 
             print("{}:\t{:.9f}".format(iteration, reduced_loss))
             if with_tensorboard and rank == 0:
-                logger.add_scalar('training_loss', reduced_loss, i + len(train_loader) * epoch)
+                logger_train.add_scalar('loss', reduced_loss, i + len(train_loader) * epoch)
                 # adding logging for GPU utilization and memory usage
                 gpu_memory_used, gpu_utilization = get_gpu_stats()
                 k = 'gpu' + str(0)
-                logger.add_scalar(k + '/memory', gpu_memory_used, i + len(train_loader) * epoch)
-                logger.add_scalar(k + '/load', gpu_utilization, i + len(train_loader) * epoch)
+                logger_train.add_scalar(k + '/memory', gpu_memory_used, i + len(train_loader) * epoch)
+                logger_train.add_scalar(k + '/load', gpu_utilization, i + len(train_loader) * epoch)
 
             if (iteration % iters_per_checkpoint == 0):
                 if rank == 0:
@@ -203,7 +204,7 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
                 loss = criterion(outputs).item()
                 print("{}:\t{:.9f}".format(iteration, loss))
                 if with_tensorboard and rank == 0:
-                    logger.add_scalar('eval_loss', loss, i + len(eval_loader) * epoch)
+                    logger_eval.add_scalar('loss', loss, i + len(eval_loader) * epoch)
                 outputs = None
 
                 # use the first batch for tensorboard audio samples
@@ -216,8 +217,8 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
             for i in range(0, 5):
                 ta = tensorboard_audio[i].cpu().numpy()
                 tag = tensorboard_audio_generated[i].cpu().numpy()
-                logger.add_audio("sample " + str(i) + "/orig", ta, epoch, sample_rate=data_config['sampling_rate'])
-                logger.add_audio("sample " + str(i) + "/gen", tag, epoch, sample_rate=data_config['sampling_rate'])
+                logger_eval.add_audio("sample " + str(i) + "/orig", ta, epoch, sample_rate=data_config['sampling_rate'])
+                logger_eval.add_audio("sample " + str(i) + "/gen", tag, epoch, sample_rate=data_config['sampling_rate'])
 
 
 
