@@ -176,7 +176,7 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
                 optimizer.step()
 
                 train_pbar.set_description("Epoch {} Iter {} Loss {:.3f}".format(epoch, iteration, reduced_loss))
-                if with_tensorboard and rank == 0:
+                if with_tensorboard and rank == 0 and iteration % 10 == 0:
                     logger_train.add_scalar('loss', reduced_loss, i + len(train_loader) * epoch)
                     # adding logging for GPU utilization and memory usage
                     gpu_memory_used, gpu_utilization = get_gpu_stats()
