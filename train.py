@@ -121,12 +121,12 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
     train_sampler = DistributedSampler(trainset) if num_gpus > 1 else None
     eval_sampler = DistributedSampler(evalset) if num_gpus > 1 else None
     # =====END:   ADDED FOR DISTRIBUTED======
-    train_loader = DataLoader(trainset, num_workers=1, shuffle=False,
+    train_loader = DataLoader(trainset, num_workers=2, shuffle=False,
                               sampler=train_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
                               drop_last=True)
-    eval_loader = DataLoader(trainset, num_workers=1, shuffle=False,
+    eval_loader = DataLoader(trainset, num_workers=2, shuffle=False,
                               sampler=eval_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
