@@ -6,14 +6,15 @@
         "learning_rate": 0.01373672916655064,
         "sigma": 1.0,
         "iters_per_checkpoint": 1000,
-        "batch_size": 14,
+        "batch_size": 10,
         "seed": 1234,
         "checkpoint_path": "checkpoints/waveglow_24000",
         "with_tensorboard": true
     },
     "data_config": {
         "training_files": "train_files.txt",
-        "segment_length": 10000,
+        "eval_files": "eval_files.txt",
+        "segment_length": 16000,
         "sampling_rate": 22050,
         "filter_length": 1024,
         "hop_length": 256,

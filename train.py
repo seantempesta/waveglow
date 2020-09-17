@@ -28,6 +28,9 @@ import argparse
 import json
 import os
 import torch
+import warnings
+warnings.filterwarnings('ignore')
+import subprocess as sp
 
 #=====START: ADDED FOR DISTRIBUTED======
 from distributed import init_distributed, apply_gradient_allreduce, reduce_tensor
@@ -58,6 +61,18 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
                 'iteration': iteration,
                 'optimizer': optimizer.state_dict(),
                 'learning_rate': learning_rate}, filepath)
+
+
+def get_gpu_stats():
+  _output_to_list = lambda x: x.decode('ascii').split('\n')[:-1]
+
+  ACCEPTABLE_AVAILABLE_MEMORY = 1024
+  COMMAND = "nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv"
+  info = _output_to_list(sp.check_output(COMMAND.split()))[1:][0].split()
+  memory_used = int(info[0])
+  utilization = int(info[2])
+  return memory_used, utilization
+
 
 def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
           sigma, iters_per_checkpoint, batch_size, seed, fp16_run,
@@ -90,12 +105,27 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
                                                       optimizer)
         iteration += 1  # next iteration is iteration + 1
 
+    # HACK: setup separate training and eval sets
+    training_files = data_config['training_files']
+    eval_files = data_config['eval_files']
+    del data_config['training_files']
+    del data_config['eval_files']
+    data_config['audio_files'] = training_files
     trainset = Mel2Samp(**data_config)
+    data_config['audio_files'] = eval_files
+    evalset = Mel2Samp(**data_config)
+
     # =====START: ADDED FOR DISTRIBUTED======
     train_sampler = DistributedSampler(trainset) if num_gpus > 1 else None
+    eval_sampler = DistributedSampler(evalset) if num_gpus > 1 else None
     # =====END:   ADDED FOR DISTRIBUTED======
     train_loader = DataLoader(trainset, num_workers=1, shuffle=False,
                               sampler=train_sampler,
+                              batch_size=batch_size,
+                              pin_memory=False,
+                              drop_last=True)
+    eval_loader = DataLoader(trainset, num_workers=1, shuffle=False,
+                              sampler=eval_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
                               drop_last=True)
@@ -111,11 +141,12 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
         from tensorboardX import SummaryWriter
         logger = SummaryWriter(os.path.join(output_directory, 'logs'))
 
-    model.train()
     epoch_offset = max(0, int(iteration / len(train_loader)))
     # ================ MAIN TRAINNIG LOOP! ===================
     for epoch in range(epoch_offset, epochs):
+        model.train()
         print("Epoch: {}".format(epoch))
+
         for i, batch in enumerate(train_loader):
             model.zero_grad()
 
@@ -141,6 +172,11 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
             print("{}:\t{:.9f}".format(iteration, reduced_loss))
             if with_tensorboard and rank == 0:
                 logger.add_scalar('training_loss', reduced_loss, i + len(train_loader) * epoch)
+                # adding logging for GPU utilization and memory usage
+                gpu_memory_used, gpu_utilization = get_gpu_stats()
+                k = 'gpu' + str(0)
+                logger.add_scalar(k + '/memory', gpu_memory_used, i + len(train_loader) * epoch)
+                logger.add_scalar(k + '/load', gpu_utilization, i + len(train_loader) * epoch)
 
             if (iteration % iters_per_checkpoint == 0):
                 if rank == 0:
@@ -151,6 +187,40 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
 
             iteration += 1
 
+        # Eval
+        model.eval()
+        torch.cuda.empty_cache()
+
+        with torch.no_grad():
+            print("Eval: {}".format(epoch))
+            tensorboard_mel, tensorboard_audio = None, None
+            for i, batch in enumerate(eval_loader):
+                model.zero_grad()
+                mel, audio = batch
+                mel = torch.autograd.Variable(mel.cuda())
+                audio = torch.autograd.Variable(audio.cuda())
+                outputs = model((mel, audio))
+                loss = criterion(outputs).item()
+                print("{}:\t{:.9f}".format(iteration, loss))
+                if with_tensorboard and rank == 0:
+                    logger.add_scalar('eval_loss', loss, i + len(eval_loader) * epoch)
+                outputs = None
+
+                # use the first batch for tensorboard audio samples
+                if i == 0:
+                    tensorboard_mel = mel
+                    tensorboard_audio = audio
+
+            # log audio samples to tensorboard
+            tensorboard_audio_generated = model.infer(tensorboard_mel)
+            for i in range(0, 5):
+                ta = tensorboard_audio[i].cpu().numpy()
+                tag = tensorboard_audio_generated[i].cpu().numpy()
+                logger.add_audio("sample " + str(i) + "/orig", ta, epoch, sample_rate=data_config['sampling_rate'])
+                logger.add_audio("sample " + str(i) + "/gen", tag, epoch, sample_rate=data_config['sampling_rate'])
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', type=str,
@@ -159,7 +229,8 @@ if __name__ == "__main__":
                         help='rank of process for distributed')
     parser.add_argument('-g', '--group_name', type=str, default='',
                         help='name of group for distributed')
-    args = parser.parse_args()
+    argv = ["-c", "config.json"]
+    args = parser.parse_args(argv)
 
     # Parse configs.  Globals nicer in this case
     with open(args.config) as f:
@@ -186,3 +257,43 @@ if __name__ == "__main__":
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
     train(num_gpus, args.rank, args.group_name, **train_config)
+
+
+def repl_test():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', type=str,
+                        help='JSON file for configuration')
+    parser.add_argument('-r', '--rank', type=int, default=0,
+                        help='rank of process for distributed')
+    parser.add_argument('-g', '--group_name', type=str, default='',
+                        help='name of group for distributed')
+    argv = ["-c", "config.json"]
+    args = parser.parse_args(argv)
+
+    # Parse configs.  Globals nicer in this case
+    with open(args.config) as f:
+        data = f.read()
+    config = json.loads(data)
+    train_config = config["train_config"]
+    global data_config
+    data_config = config["data_config"]
+    global dist_config
+    dist_config = config["dist_config"]
+    global waveglow_config
+    waveglow_config = config["waveglow_config"]
+
+    num_gpus = torch.cuda.device_count()
+    if num_gpus > 1:
+        if args.group_name == '':
+            print("WARNING: Multiple GPUs detected but no distributed group set")
+            print("Only running 1 GPU.  Use distributed.py for multiple GPUs")
+            num_gpus = 1
+
+    if num_gpus == 1 and args.rank != 0:
+        raise Exception("Doing single GPU training on rank > 0")
+
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = False
+    rank = args.rank
+    group_name = args.group_name
+    locals().update(train_config)
