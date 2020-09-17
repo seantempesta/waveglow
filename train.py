@@ -32,6 +32,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import subprocess as sp
 from tqdm import tqdm
+import statistics
 
 #=====START: ADDED FOR DISTRIBUTED======
 from distributed import init_distributed, apply_gradient_allreduce, reduce_tensor
@@ -151,48 +152,48 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
     # ================ MAIN TRAINNIG LOOP! ===================
     for epoch in range(epoch_offset, epochs):
         model.train()
-        train_pbar = tqdm(total=len(train_loader))
-        for i, batch in enumerate(train_loader):
-            model.zero_grad()
+        with tqdm(total=len(train_loader)) as train_pbar:
+            for i, batch in enumerate(train_loader):
+                model.zero_grad()
 
-            mel, audio = batch
-            mel = torch.autograd.Variable(mel.cuda())
-            audio = torch.autograd.Variable(audio.cuda())
-            outputs = model((mel, audio))
+                mel, audio = batch
+                mel = torch.autograd.Variable(mel.cuda())
+                audio = torch.autograd.Variable(audio.cuda())
+                outputs = model((mel, audio))
 
-            loss = criterion(outputs)
-            if num_gpus > 1:
-                reduced_loss = reduce_tensor(loss.data, num_gpus).item()
-            else:
-                reduced_loss = loss.item()
+                loss = criterion(outputs)
+                if num_gpus > 1:
+                    reduced_loss = reduce_tensor(loss.data, num_gpus).item()
+                else:
+                    reduced_loss = loss.item()
 
-            if fp16_run:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
+                if fp16_run:
+                    with amp.scale_loss(loss, optimizer) as scaled_loss:
+                        scaled_loss.backward()
+                else:
+                    loss.backward()
 
-            optimizer.step()
+                optimizer.step()
 
-            train_pbar.set_description("Train Epoch {} - Iteration {}:\t{:.9f}".format(epoch, iteration, reduced_loss))
-            if with_tensorboard and rank == 0:
-                logger_train.add_scalar('loss', reduced_loss, i + len(train_loader) * epoch)
-                # adding logging for GPU utilization and memory usage
-                gpu_memory_used, gpu_utilization = get_gpu_stats()
-                k = 'gpu' + str(0)
-                logger_train.add_scalar(k + '/memory', gpu_memory_used, iteration)
-                logger_train.add_scalar(k + '/load', gpu_utilization, iteration)
-                logger_train.flush()
+                train_pbar.set_description("Epoch {} Iter {} Loss {:.3f}".format(epoch, iteration, reduced_loss))
+                if with_tensorboard and rank == 0:
+                    logger_train.add_scalar('loss', reduced_loss, i + len(train_loader) * epoch)
+                    # adding logging for GPU utilization and memory usage
+                    gpu_memory_used, gpu_utilization = get_gpu_stats()
+                    k = 'gpu' + str(0)
+                    logger_train.add_scalar(k + '/memory', gpu_memory_used, iteration)
+                    logger_train.add_scalar(k + '/load', gpu_utilization, iteration)
+                    logger_train.flush()
 
-            if (iteration % iters_per_checkpoint == 0):
-                if rank == 0:
-                    checkpoint_path = "{}/waveglow_{}".format(
-                        output_directory, iteration)
-                    save_checkpoint(model, optimizer, learning_rate, iteration,
-                                    checkpoint_path)
+                if (iteration % iters_per_checkpoint == 0):
+                    if rank == 0:
+                        checkpoint_path = "{}/waveglow_{}".format(
+                            output_directory, iteration)
+                        save_checkpoint(model, optimizer, learning_rate, iteration,
+                                        checkpoint_path)
 
-            iteration += 1
-            train_pbar.update(1)
+                iteration += 1
+                train_pbar.update(1)
 
         # Eval
         model.eval()
@@ -200,24 +201,29 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
 
         with torch.no_grad():
             tensorboard_mel, tensorboard_audio = None, None
-            eval_pbar = tqdm(total=len(eval_loader))
-            for i, batch in enumerate(eval_loader):
-                model.zero_grad()
-                mel, audio = batch
-                mel = torch.autograd.Variable(mel.cuda())
-                audio = torch.autograd.Variable(audio.cuda())
-                outputs = model((mel, audio))
-                loss = criterion(outputs).item()
-                eval_pbar.set_description("Eval Epoch {} - Iteration {}:\t{:.9f}".format(epoch, iteration, loss))
-                if with_tensorboard and rank == 0:
-                    logger_eval.add_scalar('loss', loss, iteration)
-                outputs = None
+            loss_accum = []
+            with tqdm(total=len(eval_loader)) as eval_pbar:
+                for i, batch in enumerate(eval_loader):
+                    model.zero_grad()
+                    mel, audio = batch
+                    mel = torch.autograd.Variable(mel.cuda())
+                    audio = torch.autograd.Variable(audio.cuda())
+                    outputs = model((mel, audio))
+                    loss = criterion(outputs).item()
+                    loss_accum.append(loss)
+                    eval_pbar.set_description("Epoch {} Eval {:.3f}".format(epoch, loss))
+                    outputs = None
 
-                # use the first batch for tensorboard audio samples
-                if i == 0:
-                    tensorboard_mel = mel
-                    tensorboard_audio = audio
-                eval_pbar.update(1)
+                    # use the first batch for tensorboard audio samples
+                    if i == 0:
+                        tensorboard_mel = mel
+                        tensorboard_audio = audio
+                    eval_pbar.update(1)
+
+            if with_tensorboard and rank == 0:
+                loss_avg = statistics.mean(loss_accum)
+                tqdm.write("Epoch {} Eval AVG {}".format(epoch, loss_avg))
+                logger_eval.add_scalar('loss', loss_avg, iteration)
 
             # log audio samples to tensorboard
             tensorboard_audio_generated = model.infer(tensorboard_mel)
