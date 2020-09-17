@@ -125,12 +125,12 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
     # =====END:   ADDED FOR DISTRIBUTED======
 
     print("Creating dataloaders with " + str(num_workers) + " workers")
-    train_loader = DataLoader(trainset, num_workers=num_workers, shuffle=False,
+    train_loader = DataLoader(trainset, num_workers=num_workers, shuffle=True,
                               sampler=train_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
                               drop_last=True)
-    eval_loader = DataLoader(trainset, num_workers=num_workers, shuffle=False,
+    eval_loader = DataLoader(trainset, num_workers=num_workers, shuffle=True,
                               sampler=eval_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
