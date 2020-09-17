@@ -78,7 +78,7 @@ def get_gpu_stats():
 
 def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
           sigma, iters_per_checkpoint, batch_size, seed, fp16_run,
-          checkpoint_path, with_tensorboard):
+          checkpoint_path, with_tensorboard, num_workers=2):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     #=====START: ADDED FOR DISTRIBUTED======
@@ -121,12 +121,14 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
     train_sampler = DistributedSampler(trainset) if num_gpus > 1 else None
     eval_sampler = DistributedSampler(evalset) if num_gpus > 1 else None
     # =====END:   ADDED FOR DISTRIBUTED======
-    train_loader = DataLoader(trainset, num_workers=2, shuffle=False,
+
+    print("Creating dataloaders with " + str(num_workers) + " workers")
+    train_loader = DataLoader(trainset, num_workers=num_workers, shuffle=False,
                               sampler=train_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
                               drop_last=True)
-    eval_loader = DataLoader(trainset, num_workers=2, shuffle=False,
+    eval_loader = DataLoader(trainset, num_workers=num_workers, shuffle=False,
                               sampler=eval_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
