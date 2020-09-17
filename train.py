@@ -232,8 +232,7 @@ if __name__ == "__main__":
                         help='rank of process for distributed')
     parser.add_argument('-g', '--group_name', type=str, default='',
                         help='name of group for distributed')
-    argv = ["-c", "config.json"]
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
 
     # Parse configs.  Globals nicer in this case
     with open(args.config) as f:
