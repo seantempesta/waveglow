@@ -35,7 +35,7 @@ from scipy.io.wavfile import read
 
 # We're using the audio processing from TacoTron2 to make sure it matches
 sys.path.insert(0, 'tacotron2')
-from tacotron2.layers import TacotronSTFT
+from layers import TacotronSTFT
 
 MAX_WAV_VALUE = 32768.0
 
@@ -76,6 +76,7 @@ class Mel2Samp(torch.utils.data.Dataset):
         self.sampling_rate = sampling_rate
 
     def get_mel(self, audio):
+        audio = audio + (torch.rand_like(audio) - 0.5) / MAX_WAV_VALUE
         audio_norm = audio / MAX_WAV_VALUE
         audio_norm = audio_norm.unsqueeze(0)
         audio_norm = torch.autograd.Variable(audio_norm, requires_grad=False)
