@@ -67,11 +67,13 @@ def get_gpu_stats():
   _output_to_list = lambda x: x.decode('ascii').split('\n')[:-1]
 
   ACCEPTABLE_AVAILABLE_MEMORY = 1024
-  COMMAND = "nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv"
+  COMMAND = "nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv"
   info = _output_to_list(sp.check_output(COMMAND.split()))[1:][0].split()
   memory_used = int(info[0])
-  utilization = int(info[2])
-  return memory_used, utilization
+  memory_total = int(info[2])
+  memory_used_pct = int((memory_used / memory_total) * 100)
+  utilization = int(info[4])
+  return memory_used_pct, utilization
 
 
 def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
