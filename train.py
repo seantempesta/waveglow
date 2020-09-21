@@ -130,7 +130,7 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
                               batch_size=batch_size,
                               pin_memory=False,
                               drop_last=True)
-    eval_loader = DataLoader(trainset, num_workers=num_workers, shuffle=True,
+    eval_loader = DataLoader(evalset, num_workers=num_workers, shuffle=True,
                               sampler=eval_sampler,
                               batch_size=batch_size,
                               pin_memory=False,
