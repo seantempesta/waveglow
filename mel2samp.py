@@ -38,6 +38,8 @@ sys.path.insert(0, 'tacotron2')
 from layers import TacotronSTFT
 
 MAX_WAV_VALUE = 32768.0
+from random import randrange
+
 
 def files_to_list(filename):
     """
@@ -85,24 +87,32 @@ class Mel2Samp(torch.utils.data.Dataset):
         return melspec
 
     def __getitem__(self, index):
-        # Read audio
-        filename = self.audio_files[index]
-        audio, sampling_rate = load_wav_to_torch(filename)
-        if sampling_rate != self.sampling_rate:
-            raise ValueError("{} SR doesn't match target {} SR".format(
-                sampling_rate, self.sampling_rate))
+        while(True):
+            try:
+                # Read audio
+                filename = self.audio_files[index]
+                audio, sampling_rate = load_wav_to_torch(filename)
+                if sampling_rate != self.sampling_rate:
+                    raise ValueError("{} SR doesn't match target {} SR".format(
+                        sampling_rate, self.sampling_rate))
 
-        # Take segment
-        if audio.size(0) >= self.segment_length:
-            max_audio_start = audio.size(0) - self.segment_length
-            audio_start = random.randint(0, max_audio_start)
-            audio = audio[audio_start:audio_start+self.segment_length]
-            audio_std = audio.std()
-            if audio_std < 1e-5:
-                raise ValueError("Sample too silent: {}".format(filename))
-        else:
-            raise ValueError("Sample too short: {}".format(filename))
-            audio = torch.nn.functional.pad(audio, (0, self.segment_length - audio.size(0)), 'constant').data
+                # Take segment
+                if audio.size(0) >= self.segment_length:
+                    max_audio_start = audio.size(0) - self.segment_length
+                    audio_start = random.randint(0, max_audio_start)
+                    audio = audio[audio_start:audio_start+self.segment_length]
+                    audio_std = audio.std()
+                    if audio_std < 1e-5:
+                        raise ValueError("Sample too silent: {}".format(filename))
+                else:
+                    raise ValueError("Sample too short: {}".format(filename))
+                    audio = torch.nn.functional.pad(audio, (0, self.segment_length - audio.size(0)), 'constant').data
+                break
+            except Exception as e:
+                print(e)
+            finally:
+                index = randrange(0,len(self.audio_files))
+
 
         mel = self.get_mel(audio)
         audio = audio / MAX_WAV_VALUE
