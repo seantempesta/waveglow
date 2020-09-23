@@ -97,6 +97,9 @@ class Mel2Samp(torch.utils.data.Dataset):
             max_audio_start = audio.size(0) - self.segment_length
             audio_start = random.randint(0, max_audio_start)
             audio = audio[audio_start:audio_start+self.segment_length]
+            audio_std = audio.std()
+            if audio_std < 1e-5:
+                raise ValueError("Sample too silent: {}".format(filename))
         else:
             raise ValueError("Sample too short: {}".format(filename))
             audio = torch.nn.functional.pad(audio, (0, self.segment_length - audio.size(0)), 'constant').data
