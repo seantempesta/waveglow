@@ -39,6 +39,8 @@ from layers import TacotronSTFT
 
 MAX_WAV_VALUE = 32768.0
 from random import randrange
+from pydub import AudioSegment
+from pydub import silence
 
 
 def files_to_list(filename):
@@ -78,7 +80,7 @@ class Mel2Samp(torch.utils.data.Dataset):
         self.sampling_rate = sampling_rate
 
     def get_mel(self, audio):
-        audio = audio + (torch.rand_like(audio) - 0.5) / MAX_WAV_VALUE
+        #audio = audio + (torch.rand_like(audio) - 0.5) / MAX_WAV_VALUE   # commenting out because why are we adding noise?
         audio_norm = audio / MAX_WAV_VALUE
         audio_norm = audio_norm.unsqueeze(0)
         audio_norm = torch.autograd.Variable(audio_norm, requires_grad=False)
@@ -101,12 +103,21 @@ class Mel2Samp(torch.utils.data.Dataset):
                     max_audio_start = audio.size(0) - self.segment_length
                     audio_start = random.randint(0, max_audio_start)
                     audio = audio[audio_start:audio_start+self.segment_length]
+
+                    # if the audio sample has a very small standard deviation, it's probably a bad sample
                     audio_std = audio.std()
                     if audio_std < 1e-4:
+                        raise ValueError("Sample low std deviation: {}".format(filename))
+
+                    # try and detect silence with pydub
+                    audio_pydub = AudioSegment.from_wav(filename)
+                    audio_slice = audio_pydub[audio_start:audio_start + self.segment_length]
+                    if silence.detect_silence(audio_slice):
                         raise ValueError("Sample too silent: {}".format(filename))
+
                 else:
                     raise ValueError("Sample too short: {}".format(filename))
-                    audio = torch.nn.functional.pad(audio, (0, self.segment_length - audio.size(0)), 'constant').data
+                    #audio = torch.nn.functional.pad(audio, (0, self.segment_length - audio.size(0)), 'constant').data
                 break
             except Exception as e:
                 print(e)
